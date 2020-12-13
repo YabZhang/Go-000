@@ -49,9 +49,10 @@ var RowNotFound = xerrors.New("row not found")
 //GetUserById DAO Method
 func GetUserByID(id int) (*user, error) {
 	var name string
-	err := DB.QueryRow("select name from users where id = ?", id).Scan(&name)
+	querySQL := "select name from users where id = ?"
+	err := DB.QueryRow(querySQL, id).Scan(&name)
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.Wrapf(RowNotFound, "user [id=%d] not found", id)
+		return nil, errors.Wrapf(RowNotFound, "Sql: %s, Param: %d ", querySQL, id)
 	}
 
 	if err != nil {
