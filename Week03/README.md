@@ -107,4 +107,27 @@
         * context cancel 处理
 
 4. channel
+
+    Unbuffered channel（保证同步; Recive先于Send） vs buffered channel
+    Latencies due to under-sized buffer
+
+    Go Concurrency Patterns: 参考官网文章
+
 5. package Context
+
+    Go1.7 开始引入context 包，它使得跨API边界的请求范围元数据、取消信号和截止信号很容易传递给处理请求所涉及到其他 goroutine (显示传递).
+    其他语言: Thread Local Storage, XXXContext
+
+    两种方式集成Context:
+    1. func (d *Dialer) DialContext(ctx context.Context, network, address string) (Conn, error)
+    2. func (r *Request) WithContext(ctx context.Context) *Request
+
+    Do not store Contexts inside a struct type! (执行态的上下文环境，尽量只传递如函数签名)
+
+    Debugging or tracing data is safe to pass in a Context (为了防止数据竞争，Context中的数据应该只读)
+    Context.Value should inform, not control;
+
+    When a Context is canceled, all Contexts derived from that are also canceled. => close(channel)
+    All blocking/long operation should be cancelable.
+
+    https://talk.golang.org/2014/gotham-context.slide#1
