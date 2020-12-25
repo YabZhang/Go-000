@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,71 +12,53 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var done = make(chan int)
+func ServeAPP(ctx context.Context) error {
+	g, ctx := errgroup.WithContext(ctx)
+
+	// serve app
+	g.Go(func() error {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, "Hello World!")
+		})
+		server := http.Server{
+			Addr:    ":8082",
+			Handler: mux,
+		}
+
+		go func() {
+			select {
+			case <-ctx.Done():
+				fmt.Println("http ctx done")
+			}
+			server.Shutdown(context.Background())
+		}()
+		return server.ListenAndServe()
+	})
+
+	// server signal
+	g.Go(func() error {
+		quitSigs := []os.Signal{syscall.SIGKILL, syscall.SIGQUIT, syscall.SIGINT, syscall.SIGTERM} // SIGTERM is POSIX specific
+		quit := make(chan os.Signal, len(quitSigs))
+		signal.Notify(quit, quitSigs...)
+
+		for {
+			select {
+			case s := <-quit:
+				return fmt.Errorf("Got termial signal: %v", s)
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	})
+
+	return g.Wait()
+}
 
 func main() {
-	group, ctx := errgroup.WithContext(context.Background())
-	group.Go(func() error {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/close", func(writer http.ResponseWriter, request *http.Request) {
-			done <- 1
-		})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
+	defer cancel()
 
-		s := NewServer(":8080", mux)
-		go func() {
-			err := s.Start()
-			if err != nil {
-				fmt.Println(err)
-			}
-		}()
-
-		select {
-		case <-done:
-			return s.Stop()
-		case <-ctx.Done():
-			return errors.New("【通知】信号关闭")
-		}
-	})
-	group.Go(func() error {
-		quit := make(chan os.Signal)
-		signal.Notify(quit, syscall.SIGKILL, syscall.SIGQUIT, syscall.SIGINT, syscall.SIGTERM)
-		select {
-		case <-quit:
-			return errors.New("信号关闭")
-		case <-ctx.Done():
-			return errors.New("【通知】http服务关闭")
-		}
-	})
-
-	// 捕获err
-	fmt.Println("开始捕捉err")
-	err := group.Wait()
-	fmt.Println("=======", err)
-}
-
-//http服务
-type httpServer struct {
-	s       *http.Server
-	handler http.Handler
-	cxt     context.Context
-}
-
-func NewServer(address string, mux http.Handler) *httpServer {
-	h := &httpServer{cxt: context.Background()}
-	h.s = &http.Server{
-		Addr:         address,
-		WriteTimeout: time.Second * 3,
-		Handler:      mux,
-	}
-	return h
-}
-
-func (h *httpServer) Start() error {
-	fmt.Println("httpServer start")
-	return h.s.ListenAndServe()
-}
-
-func (h *httpServer) Stop() error {
-	_ = h.s.Shutdown(h.cxt)
-	return fmt.Errorf("httpServer结束")
+	err := ServeAPP(ctx)
+	fmt.Println("err: ", err)
 }
